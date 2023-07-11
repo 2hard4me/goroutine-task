@@ -1,6 +1,7 @@
 package goroutinetask
 
-//(!) WaitGroup, File Writing, Change database filling
+
+// Need to make new struct with open file, append to file and close file methods.
 
 import (
 	"fmt"
@@ -22,6 +23,39 @@ import (
 )
 
 const batchSize = 10
+
+type FileStr struct {
+	f *os.File
+}
+
+func (F *FileStr) FileOpen() error {
+	file, err := os.OpenFile("text.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	F.f = file
+	return err
+}
+
+func (F *FileStr) FileClose() {
+	F.f.Close()
+}
+
+func (F *FileStr) FileAppend(data string) error {
+	_, err := F.f.WriteString(data)
+		
+	return err
+}
+
+func (F *FileStr) FileClear() {
+	F.f.Truncate(0)
+}
+
+func (F *FileStr) AddDataInfoToFile(books []models.Books) {
+	//AppendToFile("Batch number: " + strconv.Itoa(batch) + "\n")
+	for _, book := range books {
+		F.FileAppend("id: " + strconv.Itoa(int(book.ID)) + " | " + "author: " + book.Author + " | " + "title: " + book.Title + " | " + "publisher: " + book.Publisher + "\n")
+	}
+	F.FileAppend("There are " + strconv.Itoa(int(len(books))) + " rows in this batch\n")
+}
+
 
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
@@ -60,6 +94,16 @@ func main() {
 
 	fmt.Println(time.Now())
 	var results []models.Books
+
+	var Fstr FileStr
+	Fstr.FileOpen()
+
+	go func() {
+		for books := range ch {
+			Fstr.AddDataInfoToFile(books)
+		}
+	}()
+
 	result := db.FindInBatches(&results, batchSize, func(tx *gorm.DB, batch int) error {
 		wg.Add(1)
 		go func() { // anonymous goroutine for writing data to the file
@@ -83,18 +127,17 @@ func main() {
 	})
 
 	fmt.Println("Function FindInBatches is done")
-
-	time.Sleep(30 * time.Second)
+	
+	//time.Sleep(30 * time.Second)
 
 	fmt.Printf("Number of goroutines: %d", runtime.NumGoroutine())
 
 
-	for books := range ch {
-		AddDataInfoToFile(books)
-	}
+	
 
 	wg.Wait()
 
+	Fstr.FileClose()
 	fmt.Println(result.Error)
 	fmt.Println(result.RowsAffected)
 
@@ -106,25 +149,4 @@ func initConfig() error {
 	viper.AddConfigPath("configs")
 	viper.SetConfigName("config")
 	return viper.ReadInConfig()
-}
-
-func AppendToFile(data string) {
-	f, err := os.OpenFile("text.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-	if err != nil {
-		panic(err)
-	}
-
-	defer f.Close()
-
-	if _, err := f.WriteString(data); err != nil {
-		panic(err)
-	}
-}
-
-func AddDataInfoToFile(books []models.Books) {
-	//AppendToFile("Batch number: " + strconv.Itoa(batch) + "\n")
-	for _, book := range books {
-		AppendToFile("id: " + strconv.Itoa(int(book.ID)) + " | " + "author: " + book.Author + " | " + "title: " + book.Title + " | " + "publisher: " + book.Publisher + "\n")
-	}
-	AppendToFile("There are " + strconv.Itoa(int(len(books))) + " rows in this batch\n")
 }
